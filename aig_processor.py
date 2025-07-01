@@ -641,7 +641,7 @@ class AIGClassListProcessor:
     
     def print_statistics(self):
         """
-        Print statistics to standard output as required by prompt.md
+        Print statistics to standard output and save to markdown file as required by prompt.md
         """
         print("\n" + "="*60)
         print("AIG STUDENT STATISTICS")
@@ -678,6 +678,68 @@ class AIGClassListProcessor:
             print(f"  - Students found in Excel: {match_percentage:.1f}% of source total")
         
         print("="*60)
+        
+        # Save statistics to markdown file as required by prompt.md
+        self.save_statistics_to_markdown(total_aig, missing_count, aig_percentage if self.stats['total_students'] > 0 else 0, 
+                                       td_percentage if self.stats['total_students'] > 0 else 0, 
+                                       match_percentage if len(self.students_in_sources) > 0 else 0)
+
+    def save_statistics_to_markdown(self, total_aig, missing_count, aig_percentage, td_percentage, match_percentage):
+        """
+        Save statistics to a markdown file as required by prompt.md
+        """
+        markdown_content = f"""# AIG Student Statistics Report
+
+Generated on: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}
+
+## Summary
+
+- **Total students processed in Excel:** {self.stats['total_students']}
+- **Students with AIG status:** {total_aig}
+- **Students who are only TD:** {len(self.stats['td_only_students'])}
+
+## AIG Status Breakdown
+
+| Category | Count |
+|----------|-------|
+| Math only | {self.stats['aig_math_only']} |
+| Reading only | {self.stats['aig_reading_only']} |
+| Both Math & Reading | {self.stats['aig_both']} |
+| No AIG status | {self.stats['aig_none']} |
+
+## Source Document Analysis
+
+- **Total students found in PDF/Word:** {len(self.students_in_sources)}
+- **Students found in Excel:** {len(self.students_in_excel)}
+- **Students in source docs but NOT in Excel:** {missing_count}
+
+## Percentages
+
+- **AIG students:** {aig_percentage:.1f}% of Excel total
+- **TD-only students:** {td_percentage:.1f}% of Excel total
+- **Students found in Excel:** {match_percentage:.1f}% of source total
+
+## Generated Files
+
+1. `updated_class_lists.xlsx` - Main Excel file with AIG columns and color coding
+2. `updated_class_lists_AIG_Only.xlsx` - Excel file containing only AIG students
+3. `students_not_in_excel.xlsx` - Students from PDF/Word not found in Excel
+
+## Color Coding
+
+- 🔵 **Light Blue (ADD8E6):** Students with AIG Math only
+- 🟠 **Orange:** Students with AIG Reading only  
+- 🟡 **Yellow:** Students with both AIG Math and Reading
+"""
+        
+        # Save to output directory
+        markdown_file = os.path.join(self.output_dir, 'aig_statistics_report.md')
+        try:
+            with open(markdown_file, 'w', encoding='utf-8') as f:
+                f.write(markdown_content)
+            logger.info(f"Statistics saved to markdown file: {markdown_file}")
+        except Exception as e:
+            logger.error(f"Error saving markdown file: {e}")
 
     def process(self):
         """

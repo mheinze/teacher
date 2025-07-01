@@ -27,5 +27,5 @@ The PDF contains columns with Name Student Id Grade Reading Math. Use the studen
 * Use python virtual envionrment is in a directory called venv
 * The python packages should be listed in a file called requirements.txt
 * Remove all the temporary files leaving only the final Excel spreadsheet
-* On standard output list how many students have AIG status
-* On standard output list how many students are only TD
+* In a markdown file output list how many students have AIG status and how many studants are only TD
+* Package application as a clickable MacOS application with py2app that prompts for the PDF, Word and Excel documents and generates the output
