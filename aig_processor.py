@@ -20,6 +20,7 @@ import pandas as pd
 import PyPDF2
 import os
 import re
+import sys
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import PatternFill
 from openpyxl.utils.dataframe import dataframe_to_rows
@@ -184,7 +185,10 @@ class AIGClassListProcessor:
                                 'student_id': student_id,
                                 'grade': grade,
                                 'reading': is_aig_reading,
-                                'math': is_aig_math
+                                'math': is_aig_math,
+                                'reading_type': reading_status,  # Original value from PDF
+                                'math_type': math_status,         # Original value from PDF
+                                'from_word': False
                             }
                             
                             # Add to AIG sets
@@ -286,6 +290,13 @@ class AIGClassListProcessor:
                                 # Merge with existing data from PDF
                                 self.student_details[normalized_name]['reading'] = self.student_details[normalized_name]['reading'] or is_aig_reading
                                 self.student_details[normalized_name]['math'] = self.student_details[normalized_name]['math'] or is_aig_math
+                                # Mark as having Word document data for AIG Type display
+                                if is_aig_reading:
+                                    self.student_details[normalized_name]['reading_type'] = 'TD'
+                                    self.student_details[normalized_name]['from_word'] = True
+                                if is_aig_math:
+                                    self.student_details[normalized_name]['math_type'] = 'TD'
+                                    self.student_details[normalized_name]['from_word'] = True
                             else:
                                 # Create new record
                                 self.student_details[normalized_name] = {
@@ -293,7 +304,10 @@ class AIGClassListProcessor:
                                     'student_id': 'N/A',  # Not available in Word doc
                                     'grade': 'N/A',       # Not available in Word doc
                                     'reading': is_aig_reading,
-                                    'math': is_aig_math
+                                    'math': is_aig_math,
+                                    'reading_type': 'TD' if is_aig_reading else '-',  # TD from Word
+                                    'math_type': 'TD' if is_aig_math else '-',         # TD from Word
+                                    'from_word': True
                                 }
                             
                             # Add to AIG sets
@@ -347,12 +361,12 @@ class AIGClassListProcessor:
             classroom_grade (str): Grade of the classroom for matching
             
         Returns:
-            dict: Dictionary with 'math' and 'reading' boolean values
+            dict: Dictionary with 'math', 'reading' boolean values and 'aig_type' original values
         """
         normalized_name = self._normalize_name(str(student_name))
         
         # Initialize results
-        result = {'math': False, 'reading': False}
+        result = {'math': False, 'reading': False, 'aig_type': ''}
         
         # If we have detailed student info from PDF, use it
         if hasattr(self, 'student_details') and normalized_name in self.student_details:
@@ -365,31 +379,48 @@ class AIGClassListProcessor:
             
             result['math'] = student_info['math']
             result['reading'] = student_info['reading']
+            
+            # Determine AIG Type based on original values
+            math_type = student_info.get('math_type', '-')
+            reading_type = student_info.get('reading_type', '-')
+            
+            # Create AIG Type string according to prompt requirements:
+            # "TD if from the word document, otherwise the value from the PDF"
+            aig_types = []
+            
+            if student_info['math']:
+                math_type = student_info.get('math_type', '-')
+                if math_type != '-':
+                    # Use TD if from Word document, otherwise use PDF value
+                    display_type = 'TD' if student_info.get('from_word', False) and math_type == 'TD' else math_type
+                    aig_types.append(f"Math: {display_type}")
+                    
+            if student_info['reading']:
+                reading_type = student_info.get('reading_type', '-')
+                if reading_type != '-':
+                    # Use TD if from Word document, otherwise use PDF value
+                    display_type = 'TD' if student_info.get('from_word', False) and reading_type == 'TD' else reading_type
+                    aig_types.append(f"Reading: {display_type}")
+            
+            result['aig_type'] = '; '.join(aig_types) if aig_types else ''
+            
             return result
         
         # Fallback to name matching if detailed info not available
-        # Try exact match first
+        # Only use exact matching to avoid false positives
         in_math = normalized_name in self.aig_students['math']
         in_reading = normalized_name in self.aig_students['reading']
         
-        # If no exact match, try partial matching
-        if not in_math:
-            for aig_name in self.aig_students['math']:
-                if self._names_match(normalized_name, aig_name):
-                    in_math = True
-                    break
+        # Since we now have detailed student_details, we should not need fuzzy matching
+        # Fuzzy matching was causing false positives like "Martinez Herrera, Isabella" 
+        # matching "Martinez, Isabella"
         
-        if not in_reading:
-            for aig_name in self.aig_students['reading']:
-                if self._names_match(normalized_name, aig_name):
-                    in_reading = True
-                    break
-        
-        return {'math': in_math, 'reading': in_reading}
+        return {'math': in_math, 'reading': in_reading, 'aig_type': ''}
     
     def _names_match(self, name1, name2):
         """
         Check if two names are likely the same person
+        Updated to be more strict to avoid false positives
         
         Args:
             name1 (str): First name
@@ -398,17 +429,17 @@ class AIGClassListProcessor:
         Returns:
             bool: True if names likely match
         """
-        # Simple matching: check if last names and first names have significant overlap
+        # Simple matching: check if last names and first names match exactly
         parts1 = name1.replace(',', '').split()
         parts2 = name2.replace(',', '').split()
         
         if len(parts1) >= 2 and len(parts2) >= 2:
-            # Check if last names match (assuming first part is last name)
+            # Check if last names match exactly (case insensitive)
             if parts1[0].lower() == parts2[0].lower():
-                # Check if first names match or are similar
+                # Check if first names match exactly (no partial matching to avoid false positives)
                 first1 = parts1[1].lower()
                 first2 = parts2[1].lower()
-                return first1 == first2 or first1.startswith(first2) or first2.startswith(first1)
+                return first1 == first2
         
         return False
     
@@ -479,7 +510,7 @@ class AIGClassListProcessor:
             ws_aig_only.append(metadata_row)
             
             # Add headers (row 1) - keep original headers plus add AIG columns
-            header_row = ['LASTNAME', 'FIRSTNAME', 'AIG Math', 'AIG Reading', 'AIG Status']
+            header_row = ['LASTNAME', 'FIRSTNAME', 'AIG Math', 'AIG Reading', 'AIG Type', 'AIG Status']
             ws.append(header_row)
             ws_aig_only.append(header_row)
             
@@ -526,12 +557,12 @@ class AIGClassListProcessor:
                         self.stats['aig_none'] += 1
                     
                     # Add row data to main sheet
-                    row_data = [lastname, firstname, aig_status['math'], aig_status['reading'], status_text]
+                    row_data = [lastname, firstname, aig_status['math'], aig_status['reading'], aig_status['aig_type'], status_text]
                     ws.append(row_data)
                     
                     # Apply color formatting to main sheet
                     if color:
-                        for col_idx in range(1, 6):  # Columns A through E
+                        for col_idx in range(1, 7):  # Columns A through F (updated for new column)
                             ws.cell(row=idx, column=col_idx).fill = color
                     
                     # Add to AIG-only sheet if student has AIG status
@@ -540,7 +571,7 @@ class AIGClassListProcessor:
                         
                         # Apply color formatting to AIG-only sheet
                         if color:
-                            for col_idx in range(1, 6):  # Columns A through E
+                            for col_idx in range(1, 7):  # Columns A through F (updated for new column)
                                 ws_aig_only.cell(row=aig_row_idx, column=col_idx).fill = color
                         aig_row_idx += 1
             
@@ -799,7 +830,7 @@ Generated on: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}
         ws_missing = wb_missing.create_sheet(title="Students Not In Excel")
         
         # Add headers
-        headers = ['Student Name', 'Source', 'Student ID', 'Grade', 'AIG Math', 'AIG Reading', 'AIG Status']
+        headers = ['Student Name', 'Source', 'Student ID', 'Grade', 'AIG Math', 'AIG Reading', 'AIG Type', 'AIG Status']
         ws_missing.append(headers)
         
         # Add missing students data
@@ -826,6 +857,24 @@ Generated on: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}
                     aig_status = 'None'
                     color = None
                 
+                # Determine AIG Type based on original values following prompt requirements
+                aig_types = []
+                if student_info['math']:
+                    math_type = student_info.get('math_type', '-')
+                    if math_type != '-':
+                        # Use TD if from Word document, otherwise use PDF value
+                        display_type = 'TD' if student_info.get('from_word', False) and math_type == 'TD' else math_type
+                        aig_types.append(f"Math: {display_type}")
+                        
+                if student_info['reading']:
+                    reading_type = student_info.get('reading_type', '-')
+                    if reading_type != '-':
+                        # Use TD if from Word document, otherwise use PDF value
+                        display_type = 'TD' if student_info.get('from_word', False) and reading_type == 'TD' else reading_type
+                        aig_types.append(f"Reading: {display_type}")
+                        
+                aig_type_str = '; '.join(aig_types) if aig_types else ''
+                
                 # Add row data
                 row_data = [
                     student_name,
@@ -834,6 +883,7 @@ Generated on: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}
                     student_info['grade'],
                     student_info['math'],
                     student_info['reading'],
+                    aig_type_str,
                     aig_status
                 ]
                 
@@ -842,7 +892,7 @@ Generated on: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}
                 # Apply color formatting
                 if color:
                     row_num = ws_missing.max_row
-                    for col_idx in range(1, 8):  # Columns A through G
+                    for col_idx in range(1, 9):  # Columns A through H (updated for new column)
                         ws_missing.cell(row=row_num, column=col_idx).fill = color
         
         # Auto-adjust column widths

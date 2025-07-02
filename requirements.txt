@@ -3,4 +3,5 @@ openpyxl>=3.1.0
 PyPDF2>=3.0.0
 xlsxwriter>=3.1.0
 python-docx>=0.8.11
+numpy>=1.21.0
 py2app>=0.28.7

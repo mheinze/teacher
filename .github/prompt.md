@@ -18,6 +18,7 @@ The PDF contains columns with Name Student Id Grade Reading Math. Use the studen
 * Color the row light blue (ADD8E6) if the student is math
 * Color the row orange if the student is reading
 * Color the row yellow if the student both math and reading
+* Add a column in the Excel spreadsheet called AIG Type that has the value that was converted to mean AIG, it will be TD if from the word document, otherwise the value from the PDF
 * Use colors in the excel spreadsheets
 * Keep the sheet color in the Excel spreadsheet
 * Generate a second Excel spreadsheet that removes all the rows where AIG status is None
